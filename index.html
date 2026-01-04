@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kolobežka & Konzola – Dráčik 🐉</title>
+
+<style>
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  background:#87CEEB;
+  text-align:center;
+}
+
+/* Úvod */
+#welcome{
+  position:fixed;
+  inset:0;
+  background:linear-gradient(#004d00,#00aa00);
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+}
+#welcome h1{color:white;font-size:34px;}
+#welcome button{
+  font-size:22px;
+  padding:15px 40px;
+  border:none;
+  border-radius:25px;
+  cursor:pointer;
+}
+
+/* Hlavný obsah */
+#main{display:none; padding-top:60px;}
+canvas{
+  display:block;
+  margin:20px auto;
+  border:2px solid black;
+  background:#87CEEB;
+}
+
+/* Horné tlačidlá */
+.top-buttons{
+  display:flex;
+  justify-content:center;
+  gap:20px;
+  margin-bottom:20px;
+}
+.top-buttons button{
+  font-size:18px;
+  padding:10px 25px;
+  border:none;
+  border-radius:12px;
+  cursor:pointer;
+  color:white;
+}
+#domovBtn{background:#006400;}
+#onasBtn{background:#0000cc;}
+
+/* ⚙️ Nastavenia */
+#settingsBtn{
+  position:absolute;
+  top:10px;
+  right:10px;
+  font-size:36px; /* väčšia ikonka */
+  cursor:pointer;
+  background:none;
+  border:none;
+  z-index:100;
+}
+
+#settingsPanel{
+  position:absolute;
+  top:50px;
+  right:-220px;
+  width:200px;
+  background:white;
+  border:2px solid black;
+  border-radius:12px;
+  padding:10px;
+  text-align:left;
+  opacity:0;
+  transition: right 0.4s ease, opacity 0.4s ease;
+}
+#settingsPanel.show{
+  right:10px;
+  opacity:1;
+}
+#settingsPanel label{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  font-size:16px;
+  margin:5px 0;
+}
+</style>
+</head>
+<body>
+
+<div id="welcome">
+  <h1>👋 Ahoj<br>vítame ťa v<br>Kolobežka & Konzola</h1>
+  <button onclick="enterSite()">Pokračovať</button>
+</div>
+
+<div id="main">
+  <!-- Horné tlačidlá -->
+  <div class="top-buttons">
+    <button id="domovBtn">DOMOV</button>
+    <button id="onasBtn" onclick="window.open('https://www.youtube.com/@MichalXAdam','_blank')">O NÁS</button>
+  </div>
+
+  <!-- Nastavenia -->
+  <button id="settingsBtn" onclick="toggleSettings()">⚙️</button>
+  <div id="settingsPanel">
+    <label><input type="checkbox" id="musicToggle" checked> Hudba</label>
+    <label><input type="checkbox" id="effectsToggle" checked> Efekty</label>
+  </div>
+  
+  <!-- Hra -->
+  <h2>Mini hra: Dráčik 🐉</h2>
+  <canvas id="game" width="600" height="180"></canvas>
+  <p>Klik alebo medzerník = skok | Klik po konci = reštart</p>
+</div>
+
+<script>
+/* ===== HUDBA A EFEKTY ===== */
+const bgMusic = new Audio("https://actions.google.com/sounds/v1/ambiences/game_background_loop.ogg");
+bgMusic.loop = true;
+bgMusic.volume = 0.25;
+let musicOn = true;
+let effectsOn = true;
+
+const diamondSound = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
+diamondSound.volume=0.4;
+const hitSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
+hitSound.volume=0.6;
+
+/* ===== Úvod ===== */
+function enterSite(){
+  document.getElementById("welcome").style.display="none";
+  document.getElementById("main").style.display="block";
+  // ✅ Hudba sa spustí až pri prvom kliknutí/skoku
+}
+
+/* ⚙️ Nastavenia */
+const settingsPanel = document.getElementById("settingsPanel");
+function toggleSettings(){ settingsPanel.classList.toggle("show"); }
+document.addEventListener("click", function(e){
+  const btn = document.getElementById("settingsBtn");
+  if(settingsPanel.classList.contains("show") && !settingsPanel.contains(e.target) && e.target !== btn){
+    settingsPanel.classList.remove("show");
+  }
+});
+document.getElementById("musicToggle").addEventListener("change",e=>{
+  musicOn=e.target.checked;
+  if(musicOn && gameStarted){
+    bgMusic.play().catch(()=>{});
+  } else {
+    bgMusic.pause();
+  }
+});
+document.getElementById("effectsToggle").addEventListener("change",e=>{
+  effectsOn=e.target.checked;
+});
+
+/* DOMOV tlačidlo */
+const canvas=document.getElementById("game");
+document.getElementById("domovBtn").addEventListener("click",()=>{
+  canvas.scrollIntoView({behavior:"smooth"});
+});
+
+/* ===== HRA ===== */
+const ctx=canvas.getContext("2d");
+const GROUND=150;
+let bestScore=localStorage.getItem("bestScore")||0;
+let dino,obstacles,items,frame,score,gameOver,gameStarted=false,animationId;
+
+function resetGame(){
+  if(animationId) cancelAnimationFrame(animationId); // zastaví predchádzajúcu slučku
+  dino={x:80,y:GROUND+30,dy:0,jump:-12,g:0.6,shield:false,width:40,height:25}; // hitbox nižší
+  obstacles=[]; items=[]; frame=0; score=0; gameOver=false; gameStarted=false;
+}
+
+resetGame();
+
+function spawnObstacle(){
+  const r=Math.random();
+  if(r<0.4) obstacles.push({x:canvas.width+20,y:GROUND,emoji:"🪨",type:"ground",width:30,height:10});
+  else if(r<0.8) obstacles.push({x:canvas.width+20,y:GROUND,emoji:"🌳",type:"ground",width:30,height:10});
+  else obstacles.push({x:canvas.width+20,y:90,emoji:"🦅",type:"air",width:30,height:25});
+}
+
+function spawnItem(){
+  const e=Math.random()<0.7?"💎":"🛡️";
+  items.push({x:canvas.width+20,y:110,emoji:e,width:25,height:25});
+}
+
+function update(){
+  if(!gameStarted || gameOver) return;
+  frame++; score++;
+  dino.dy+=dino.g; dino.y+=dino.dy;
+  if(dino.y>GROUND+30){dino.y=GROUND+30; dino.dy=0;}
+  if(frame%120===0) spawnObstacle();
+  if(frame%200===0) spawnItem();
+  obstacles.forEach(o=>o.x-=4);
+  items.forEach(i=>i.x-=4);
+  obstacles=obstacles.filter(o=>o.x>-50);
+  items=items.filter(i=>i.x>-50);
+
+  obstacles.forEach(o=>{
+    if(o.x < dino.x+dino.width && o.x+o.width > dino.x){
+      let dinoBottom = dino.y + dino.height;
+      let obstacleTop = o.y;
+      let hitboxHeight = 10; // ✅ znížený hitbox prekážky
+      if(o.type==="ground" && dinoBottom >= obstacleTop + (o.height - hitboxHeight)){ 
+        if(effectsOn){ hitSound.currentTime=0; hitSound.play(); }
+        if(dino.shield){ dino.shield=false; o.x=-100; }
+        else{ gameOver=true; if(score>bestScore){ bestScore=score; localStorage.setItem("bestScore",bestScore); } }
+      }
+      if(o.type==="air" && dino.y < o.y+hitboxHeight && dinoBottom > o.y){
+        if(effectsOn){ hitSound.currentTime=0; hitSound.play(); }
+        if(dino.shield){ dino.shield=false; o.x=-100; }
+        else{ gameOver=true; if(score>bestScore){ bestScore=score; localStorage.setItem("bestScore",bestScore); } }
+      }
+    }
+  });
+
+  items.forEach(i=>{
+    if(i.x < dino.x+dino.width && i.x+i.width > dino.x &&
+       i.y < dino.y+dino.height && i.y+i.height > dino.y){
+      if(i.emoji==="💎"){ score+=200; if(effectsOn){ diamondSound.currentTime=0; diamondSound.play(); } }
+      if(i.emoji==="🛡️") dino.shield=true;
+      i.x=-100;
+    }
+  });
+}
+
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle="#228B22"; ctx.fillRect(0,GROUND,canvas.width,30);
+  ctx.save(); ctx.translate(dino.x+40,0); ctx.scale(-1,1); ctx.font="40px serif"; ctx.fillText("🐉",0,dino.y-30); ctx.restore();
+  ctx.font="30px serif"; obstacles.forEach(o=>ctx.fillText(o.emoji,o.x,o.y)); items.forEach(i=>ctx.fillText(i.emoji,i.x,i.y));
+  ctx.fillStyle="black"; ctx.font="14px Arial"; ctx.fillText("Skóre: "+score,10,20); ctx.fillText("Rekord: "+bestScore,10,40);
+  if(dino.shield) ctx.fillText("🛡️",560,20);
+  if(gameOver){ ctx.font="24px Arial"; ctx.fillText("KONIEC HRY – klikni pre reštart",90,90); }
+}
+
+function loop(){ 
+  update(); 
+  draw(); 
+  animationId = requestAnimationFrame(loop); 
+}
+
+function jump(){
+  if(!gameStarted){
+    gameStarted=true; 
+    loop(); 
+    // ✅ Hudba sa spustí až teraz, keď je interakcia
+    if(musicOn){
+      bgMusic.play().catch(()=>{}); 
+    }
+  }
+  if(gameOver){ resetGame(); return; }
+  if(dino.y>=GROUND+30) dino.dy=dino.jump;
+}
+
+document.addEventListener("keydown",e=>{ if(e.code==="Space")jump(); });
+canvas.addEventListener("click",jump);
+</script>
+
+</body>
+</html>
